@@ -61,3 +61,10 @@ wget
 wl
 xxd
 zlib1g-dev
+python3-pygame
+libsdl2-dev
+libsdl2-image-dev
+libsdl2-mixer-dev
+libsdl2-ttf-dev
+libportmidi-dev
+libfreetype6-dev

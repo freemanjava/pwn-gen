@@ -12,7 +12,7 @@ cd /home/pi
 rm -r lg.zip lg/
 
 if [ ! -d pwnagotchi ]; then
-    git clone https://github.com/jayofelony/pwnagotchi.git
+    git clone https://github.com/freemanjava/pwnagotchi_touch.git pwnagotchi
     cd pwnagotchi/
 else
     cd /home/pi/pwnagotchi/
@@ -30,6 +30,10 @@ python3 -m venv /home/pi/.pwn/ --system-site-packages
 echo -e "\e[32m### Activating virtual environment ###\e[0m"
 source /home/pi/.pwn/bin/activate
 
+echo -e "\e[32m### Installing touch interface dependencies ###\e[0m"
+pip3 install pygame --no-cache-dir
+
+
 echo -e "\e[32m### Installing Pwnagotchi ###\e[0m"
 export PATH="/root/.cargo/bin:$PATH"
 source /root/.profile
@@ -42,3 +46,7 @@ cd /home/pi
 
 ln -sf /home/pi/.pwn/bin/pwnagotchi /usr/bin/pwnagotchi
 rm -r /home/pi/pwnagotchi
+
+echo -e "\e[32m### Installing interactive configuration ###\e[0m"
+mkdir -p /etc/pwnagotchi
+cp /home/pi/pwnagotchi/config_interactive_example.toml /etc/pwnagotchi/config_interactive.toml
