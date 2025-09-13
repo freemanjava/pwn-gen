@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+echo "Current working directory: $(pwd)"
+
 # shellcheck disable=SC2119
 run_sub_stage()
 {
@@ -197,7 +199,12 @@ if [ -z "${DEPLOY_COMPRESSION}" ] && [ "${DEPLOY_ZIP:-1}" = "0" ]; then
 fi
 export DEPLOY_COMPRESSION=${DEPLOY_COMPRESSION:-zip}
 export COMPRESSION_LEVEL=${COMPRESSION_LEVEL:-6}
-export LOG_FILE="${WORK_DIR}/build.log"
+export LOG_FILE="$(realpath "${WORK_DIR}/build.log")"
+
+# Print WORK_DIR for debugging
+ echo "WORK_DIR is set to: ${WORK_DIR}"
+# Ensure WORK_DIR exists
+mkdir -p "${WORK_DIR}"
 
 export TARGET_HOSTNAME=${TARGET_HOSTNAME:-raspberrypi}
 
@@ -249,7 +256,6 @@ if [ "$SETFCAP" != "1" ]; then
 	export CAPSH_ARG="--drop=cap_setfcap"
 fi
 
-mkdir -p "${WORK_DIR}"
 trap term EXIT INT TERM
 
 dependencies_check "${BASE_DIR}/depends"

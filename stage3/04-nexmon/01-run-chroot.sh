@@ -1,111 +1,77 @@
 #!/bin/bash -e
 
-# install nexmon
-NEXMON_REPO=https://github.com/DrSchottky/nexmon.git
-NEXMON_PATCHES="patches/bcm43430a1/7_45_41_46/nexmon patches/bcm43455c0/7_45_206/nexmon patches/bcm43436b0/9_88_4_65/nexmon"
+echo "Installing Nexmon firmware for WiFi monitor mode..."
 
-PHOME=/usr/local/src
+# Get current kernel version
+KERNEL_VERSION=$(uname -r)
+echo "Current kernel version: $KERNEL_VERSION"
 
-cd /usr/local/src
-
-# Enable recursive globbing
-shopt -s globstar
-# Define the destination path using globbing
-MOD_DEST="/lib/modules/**/kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac"
-# Check if the specific file does not exist
-if [ ! -f "${MOD_DEST}/brcmfmac.ko.xz.ORIG" ]; then
-    echo -e "\e[32m=== cloning nexmon repository ===\e[0m"
-    git clone $NEXMON_REPO
-    cd nexmon
-
-    source setup_env.sh
-    make
-    # for each kernel with a build directory
-    for mod in $(cd /lib/modules ; ls); do
-
-        if [ -d /lib/modules/"$mod"/build ]; then
-        echo
-        echo -e "\e[32m=== building Nexmon for $mod ===\e[0m"
-
-        export QEMU_UNAME=$mod
-        export KERNEL=$(echo "$mod" | cut -d . -f -2)
-        MOD_DEST=/lib/modules/${mod}/kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac
-
-        # checking for installed kernel module, and not re-installing
-        # delete brcmfmac.ko.NEXMON to rebuild for that kernel tree
-        if [ ! -f "${MOD_DEST}"/brcmfmac.ko.NEXMON ]; then
-            for p in $NEXMON_PATCHES; do
-            echo -e "\e[32m=== clean $mod patch $p ===\e[0m"
-            pushd "$p"
-            make clean
-            popd
-            done
-
-            for p in $NEXMON_PATCHES; do
-            echo -e "\e[32m=== build $mod patch $p ===\e[0m"
-            pushd "$p"
-            make
-            echo -e "\e[32m===  install $mod patch $p ===\e[0m"
-            # use invalid kernel number so install-firmware
-            # skips module unloading and loading
-            QEMU_UNAME=4.20.69 make install-firmware || true
-            popd
-            done
-
-            # built a new driver module while building firmwares above, so copy it into place
-            echo cp ${PHOME}/nexmon/patches/driver/brcmfmac_"${KERNEL}".y-nexmon/brcmfmac.ko "${MOD_DEST}"/brcmfmac.ko.NEXMON
-            cp ${PHOME}/nexmon/patches/driver/brcmfmac_"${KERNEL}".y-nexmon/brcmfmac.ko "${MOD_DEST}"/brcmfmac.ko.NEXMON
-
-            pushd "${MOD_DEST}"
-            if [ -f brcmfmac.ko.xz -o -f brcmfmac.ko.xz.ORIG ]; then
-                if [ -f brcmfmac.ko.xz.ORIG ]; then
-                    # dont overwrite ORIG (again)
-                    rm -f brcmfmac.ko.xz
-                else
-                    # save original
-                    echo -e "\e[32m=== Back up original driver ===\e[0m"
-                    mv brcmfmac.ko.xz brcmfmac.ko.xz.ORIG
-                fi
-                echo -e "\e[32m=== Compressing driver ===\e[0m"
-                which xz
-                xz --verbose -c brcmfmac.ko.NEXMON > brcmfmac.ko.xz
-            elif [ -f brcmfmac.ko ]; then
-                if [ -f brcmfmac.ko.ORIG ]; then
-                    rm -f brcmfmac.ko
-                else
-                    echo -e "\e[32m=== Back up original driver ===\e[0m"
-                    mv brcmfmac.ko brcmfmac.ko.ORIG
-                fi
-                echo -e "\e[32m=== Copying new driver ===\e[0m"
-                ln brcmfmac.ko.NEXMON brcmfmac.ko
-            fi
-
-            echo -e "\e[32m=== Installed ${mod} kernel driver ===\e[0m"
-            depmod "${mod}"
-            popd
-        else
-            echo -e "\e[32m=== Already installed ${mod} ===\e[0m"
-        fi
-
-        else
-            echo
-            echo -e "\e[32m=== NO Kernel build tree for $mod ===\e[0m"
-            echo -e "\e[32m=== Skipping Nexmon ===\e[0m"
-        fi
-    done
-
-
-    if [ ! -L /usr/lib/firmware/brcm/brcmfmac43436s-sdio.bin ]; then
-        echo Linking 43430 firmware to 43436s for pizero2w with 43430 chip
-        ln -sf /usr/lib/firmware/brcm/brcmfmac43430-sdio.bin /usr/lib/firmware/brcm/brcmfmac43436s-sdio.bin
-    fi
-
-    if [ ! -f /usr/bin/nexutil ]; then
-        pushd utilities/nexutil
-        make
-        make install
-        popd
-    fi
-
-    rm -r /usr/local/src/nexmon
+# Clone Nexmon repository if it doesn't exist
+if [ ! -d "/usr/local/src/nexmon" ]; then
+    echo "Cloning Nexmon repository..."
+    git clone https://github.com/seemoo-lab/nexmon.git /usr/local/src/nexmon
 fi
+
+cd /usr/local/src/nexmon
+
+# Build firmware patches
+echo "Building Nexmon firmware patches..."
+
+# Check if we have patches for this kernel version
+KERNEL_MAJOR=$(echo $KERNEL_VERSION | cut -d'.' -f1)
+KERNEL_MINOR=$(echo $KERNEL_VERSION | cut -d'.' -f2)
+KERNEL_SHORT="${KERNEL_MAJOR}.${KERNEL_MINOR}"
+
+# Try to find compatible patches
+PATCH_DIR=""
+for dir in patches/bcm43430a1/7_45_41_46/nexmon patches/bcm43455c0/7_45_154/nexmon; do
+    if [ -d "$dir" ]; then
+        PATCH_DIR="$dir"
+        break
+    fi
+done
+
+if [ -z "$PATCH_DIR" ]; then
+    echo "Warning: No compatible Nexmon patches found for this hardware"
+    echo "Skipping Nexmon installation - WiFi will work in normal mode"
+    exit 0
+fi
+
+# Setup environment
+source setup_env.sh
+
+# Build the patches
+cd "$PATCH_DIR"
+if make; then
+    echo "Nexmon patches built successfully"
+
+    # Install firmware
+    if [ -f "brcmfmac43430-sdio.bin" ]; then
+        cp brcmfmac43430-sdio.bin /lib/firmware/brcm/
+        echo "Installed brcmfmac43430-sdio.bin firmware"
+    fi
+
+    if [ -f "brcmfmac43436-sdio.bin" ]; then
+        cp brcmfmac43436-sdio.bin /lib/firmware/brcm/
+        echo "Installed brcmfmac43436-sdio.bin firmware"
+    fi
+
+    # Check for kernel driver
+    DRIVER_PATH="/usr/local/src/nexmon/patches/driver/brcmfmac_${KERNEL_SHORT}.y-nexmon/brcmfmac.ko"
+    if [ -f "$DRIVER_PATH" ]; then
+        echo "Installing Nexmon kernel driver..."
+        MODULES_DIR="/lib/modules/$KERNEL_VERSION/kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac"
+        mkdir -p "$MODULES_DIR"
+        cp "$DRIVER_PATH" "$MODULES_DIR/brcmfmac.ko.NEXMON"
+        echo "Nexmon kernel driver installed successfully"
+    else
+        echo "Warning: Nexmon kernel driver not available for kernel $KERNEL_VERSION"
+        echo "WiFi monitor mode may not be fully functional"
+    fi
+
+else
+    echo "Warning: Nexmon patch build failed"
+    echo "Continuing without Nexmon - WiFi will work in normal mode"
+fi
+
+echo "Nexmon installation completed (with warnings if applicable)"

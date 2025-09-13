@@ -11,6 +11,12 @@ RUN apt-get -y update && \
         binfmt-support ca-certificates fdisk gpg pigz arch-test \
     && rm -rf /var/lib/apt/lists/*
 
+# Enable binfmt_misc support for cross-platform builds
+RUN update-binfmts --enable
+
 COPY . /pi-gen/
+
+# Initialize git repository to avoid git errors
+RUN cd /pi-gen && git init . || true
 
 VOLUME [ "/pi-gen/work", "/pi-gen/deploy"]
